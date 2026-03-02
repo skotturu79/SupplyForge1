@@ -127,7 +127,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const label = { ...base, ...specific };
-  shippingLabels.unshift(label as typeof shippingLabels[number]);
+  shippingLabels.unshift(label as unknown as typeof shippingLabels[number]);
   return created(label);
 }
 

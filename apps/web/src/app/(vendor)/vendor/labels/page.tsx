@@ -141,7 +141,7 @@ export default function VendorLabelsPage() {
 
   // ── Build live preview from form state ───────────────────────────
   const livePreview: LabelData = (() => {
-    const base = { type: labelType, fromAddress: fromAddr, toAddress: toAddr, referenceNumber: refNum || null, batchNumber: batch || undefined, lotNumber: lot || undefined };
+    const base = { type: labelType as LabelType, fromAddress: fromAddr, toAddress: toAddr, referenceNumber: refNum || null, batchNumber: batch || undefined, lotNumber: lot || undefined };
     if (labelType === 'SHIPPING') return { ...base, carrier, service, labelFormat, trackingNumber: 'PREVIEW-ONLY', isReturn, signatureRequired: sigReq, weight: parseFloat(weight) || undefined, weightUnit, dimensions: dimL && dimW && dimH ? { l: +dimL, w: +dimW, h: +dimH, unit: dimUnit } : null, orderId: orderId || null };
     if (labelType === 'PALLET')  return { ...base, sscc: '000000000000000000', content: content || undefined, grossWeight: parseFloat(grossWeight) || undefined, grossWeightUnit: grossUnit, units: parseInt(units) || undefined, unitsType, productionDate: prodDate || undefined, expiryDate: expiryDate || undefined };
     if (labelType === 'HU')     return { ...base, huNumber: huNumber || 'HU-PREVIEW', materialNumber: matNumber || undefined, materialDescription: matDesc || undefined, quantity: parseFloat(quantity) || undefined, quantityUnit: qtyUnit, deliveryNumber: delivery || undefined, plant: plant || undefined, storageLocation: storageLoc || undefined };
@@ -166,7 +166,7 @@ export default function VendorLabelsPage() {
   const generateMutation = useMutation({
     mutationFn: (payload: object) =>
       apiClient.post(`/carriers/${labelType === 'SHIPPING' ? carrier : 'NONE'}/labels`, payload).then((r: { data: unknown }) => r.data),
-    onSuccess: (label) => { setPreview(label); qc.invalidateQueries({ queryKey: ['vendor-labels'] }); },
+    onSuccess: (label) => { setPreview(label as LabelData); qc.invalidateQueries({ queryKey: ['vendor-labels'] }); },
   });
 
   const handleGenerate = () => {

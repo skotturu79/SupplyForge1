@@ -19,6 +19,6 @@ export async function POST(req: NextRequest) {
     lastDeliveredAt: null,
     createdAt: new Date().toISOString(),
   };
-  feedSubscriptions.push(newSub);
+  feedSubscriptions.push(newSub as unknown as typeof feedSubscriptions[number]);
   return created(newSub);
 }

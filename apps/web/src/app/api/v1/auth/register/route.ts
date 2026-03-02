@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     country: country ?? 'US', website: null, vatId: null,
     address: {}, apiCallsUsed: 0, apiCallsLimit: 1000,
     createdAt: new Date().toISOString(),
-  } as Parameters<typeof tenants.push>[0]);
+  } as unknown as Parameters<typeof tenants.push>[0]);
 
   users.push({
     id: userId, tenantId, email, firstName, lastName,

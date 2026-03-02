@@ -17,8 +17,9 @@ export async function POST(req: NextRequest) {
     totalAmount: total,
     dueDate: body.deliveryDate ?? null,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     sentAt: null,
   };
-  documents.unshift(newDoc);
+  documents.unshift(newDoc as unknown as typeof documents[number]);
   return Response.json(newDoc, { status: 201 });
 }

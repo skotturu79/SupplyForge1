@@ -22,6 +22,6 @@ export async function POST(req: NextRequest) {
     // Return the full key ONCE — never returned again
     key: rawKey,
   };
-  apiKeys.push(newKey);
+  apiKeys.push(newKey as unknown as typeof apiKeys[number]);
   return created(newKey);
 }

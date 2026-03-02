@@ -15,6 +15,6 @@ export async function POST(req: NextRequest) {
     lastLoginAt: null,
     createdAt: new Date().toISOString(),
   };
-  users.push(newUser);
+  users.push(newUser as unknown as typeof users[number]);
   return ok({ message: `Invitation sent to ${body.email}`, user: newUser });
 }
