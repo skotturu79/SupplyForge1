@@ -38,6 +38,12 @@ Thumbs.db
 # IDE
 .vscode/settings.json
 .idea/
+
+# Claude Code (local tool config — machine-specific)
+.claude/
+
+# TypeScript build info
+*.tsbuildinfo
 *.suo
 *.ntvs*
 *.njsproj

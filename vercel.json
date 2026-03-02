@@ -1,6 +1,0 @@
-{
-  "buildCommand": "turbo run build --filter=@supplyforge/web",
-  "outputDirectory": "apps/web/.next",
-  "installCommand": "npm install",
-  "framework": "nextjs"
-}
