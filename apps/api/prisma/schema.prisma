@@ -1,0 +1,476 @@
+// ══════════════════════════════════════════════════════════════════
+// SupplyForge — Prisma Schema
+// Multi-tenant B2B logistics platform
+// ══════════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ─────────────────────────────────────────────────────────
+
+enum TenantType {
+  BUSINESS
+  VENDOR
+  CARRIER
+}
+
+enum TenantStatus {
+  PENDING
+  VERIFIED
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum PlanTier {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  OPERATOR
+  VIEWER
+}
+
+enum DocumentType {
+  PO
+  INVOICE
+  ASN
+  DELIVERY_NOTE
+  LABEL
+  BOL
+  CREDIT_NOTE
+  CUSTOMS
+}
+
+enum DocumentStatus {
+  DRAFT
+  SENT
+  ACKNOWLEDGED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  PAID
+  DISPUTED
+}
+
+enum ConnectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum ConnectionTier {
+  STANDARD
+  PREFERRED
+  TRUSTED
+}
+
+enum CarrierCode {
+  FEDEX
+  UPS
+  DHL
+  USPS
+  CUSTOM
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+// ── Tenant ────────────────────────────────────────────────────────
+
+model Tenant {
+  id            String       @id @default(uuid())
+  name          String
+  slug          String       @unique
+  type          TenantType
+  status        TenantStatus @default(PENDING)
+  planTier      PlanTier     @default(FREE)
+  country       String       @db.Char(2)
+  address       Json         @default("{}")
+  website       String?
+  logoUrl       String?
+  dunsNumber    String?
+  vatId         String?
+  taxId         String?
+  apiCallsUsed  Int          @default(0)
+  apiCallsLimit Int          @default(10000)
+  metadata      Json         @default("{}")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relations
+  users               User[]
+  apiKeys             ApiKey[]
+  sentDocuments       Document[]          @relation("SenderTenant")
+  receivedDocuments   Document[]          @relation("ReceiverTenant")
+  outgoingConnections PartnerConnection[] @relation("RequesterTenant")
+  incomingConnections PartnerConnection[] @relation("TargetTenant")
+  webhooks            Webhook[]
+  shipments           Shipment[]
+  feedSubscriptions   DataFeedSubscription[]
+  vendorProfile       VendorProfile?
+  auditLogs           AuditLog[]
+  inventoryRecords    InventoryRecord[]
+
+  @@index([type, status])
+  @@map("tenants")
+}
+
+// ── User ──────────────────────────────────────────────────────────
+
+model User {
+  id                   String    @id @default(uuid())
+  tenantId             String
+  email                String    @unique
+  firstName            String
+  lastName             String
+  passwordHash         String
+  role                 UserRole  @default(OPERATOR)
+  permissions          String[]  @default([])
+  mfaEnabled           Boolean   @default(false)
+  mfaSecret            String?
+  resetToken           String?
+  resetTokenExpiresAt  DateTime?
+  lastLoginAt          DateTime?
+  isActive             Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  // Relations
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  refreshTokens RefreshToken[]
+  documentEvents DocumentEvent[]
+
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ── API Keys ──────────────────────────────────────────────────────
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String
+  keyHash     String    @unique
+  keyPrefix   String    @db.Char(12)
+  scopes      String[]
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime?
+  rateLimit   Int       @default(1000)
+  callCount   BigInt    @default(0)
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("api_keys")
+}
+
+// ── Documents ─────────────────────────────────────────────────────
+
+model Document {
+  id                 String         @id @default(uuid())
+  senderTenantId     String
+  receiverTenantId   String
+  type               DocumentType
+  status             DocumentStatus @default(DRAFT)
+  referenceNumber    String         @unique
+  externalRef        String?
+  currency           String         @db.Char(3) @default("USD")
+  totalAmount        Float?
+
+  // Encrypted content (AES-256-GCM)
+  encryptedContent   String?        @db.Text
+  encryptionIv       String?        @db.Char(32)    // 16 bytes hex
+  encryptionAuthTag  String?        @db.Char(32)    // 16 bytes hex
+  contentHash        String?        @db.Char(64)    // SHA-256 hex
+  digitalSignature   String?        @db.Text        // RSA-PSS base64
+
+  // Timestamps
+  dueDate            DateTime?
+  sentAt             DateTime?
+  acknowledgedAt     DateTime?
+  processedAt        DateTime?
+
+  // Storage
+  storageUrl         String?
+
+  // Parent (e.g., credit note linked to invoice)
+  parentDocumentId   String?
+
+  metadata           Json           @default("{}")
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  // Relations
+  sender           Tenant          @relation("SenderTenant", fields: [senderTenantId], references: [id])
+  receiver         Tenant          @relation("ReceiverTenant", fields: [receiverTenantId], references: [id])
+  parentDocument   Document?       @relation("DocumentHierarchy", fields: [parentDocumentId], references: [id])
+  childDocuments   Document[]      @relation("DocumentHierarchy")
+  events           DocumentEvent[]
+  attachments      DocumentAttachment[]
+
+  @@index([senderTenantId, type, status])
+  @@index([receiverTenantId, type, status])
+  @@index([referenceNumber])
+  @@index([createdAt])
+  @@map("documents")
+}
+
+model DocumentEvent {
+  id            String   @id @default(uuid())
+  documentId    String
+  type          String   // STATUS_SENT, STATUS_ACCEPTED, COMMENT, etc.
+  actorTenantId String
+  actorUserId   String?
+  comment       String?
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now())
+
+  document  Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  actorUser User?    @relation(fields: [actorUserId], references: [id])
+
+  @@index([documentId])
+  @@map("document_events")
+}
+
+model DocumentAttachment {
+  id          String   @id @default(uuid())
+  documentId  String
+  filename    String
+  mimeType    String
+  sizeBytes   Int
+  storageKey  String
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("document_attachments")
+}
+
+// ── Partner Connections ───────────────────────────────────────────
+
+model PartnerConnection {
+  id                  String           @id @default(uuid())
+  requesterTenantId   String
+  targetTenantId      String
+  status              ConnectionStatus @default(PENDING)
+  tier                ConnectionTier   @default(STANDARD)
+  dataSharingConfig   Json             @default("{}")
+  message             String?
+  approvedAt          DateTime?
+  metadata            Json             @default("{}")
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  requester Tenant @relation("RequesterTenant", fields: [requesterTenantId], references: [id])
+  target    Tenant @relation("TargetTenant", fields: [targetTenantId], references: [id])
+
+  feedSubscriptions DataFeedSubscription[]
+
+  @@unique([requesterTenantId, targetTenantId])
+  @@index([requesterTenantId, status])
+  @@index([targetTenantId, status])
+  @@map("partner_connections")
+}
+
+// ── Vendor Profile ────────────────────────────────────────────────
+
+model VendorProfile {
+  id                  String             @id @default(uuid())
+  tenantId            String             @unique
+  categories          String[]
+  verificationStatus  VerificationStatus @default(PENDING)
+  verifiedAt          DateTime?
+  rating              Float?
+  reviewCount         Int                @default(0)
+  certifications      Json               @default("[]")
+  preferredCurrencies String[]           @default(["USD"])
+  leadTimeDays        Int?
+  moq                 Int?               // minimum order quantity
+  metadata            Json               @default("{}")
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([verificationStatus])
+  @@map("vendor_profiles")
+}
+
+// ── Data Feed Subscriptions ───────────────────────────────────────
+
+model DataFeedSubscription {
+  id                  String   @id @default(uuid())
+  subscriberTenantId  String
+  partnerTenantId     String
+  connectionId        String
+  feedTypes           String[]
+  deliveryMethod      String   // WEBHOOK, API_POLL, SFTP, AS2
+  webhookUrl          String?
+  webhookSecret       String?
+  sftpConfig          Json?
+  as2Config           Json?
+  isActive            Boolean  @default(true)
+  lastDeliveredAt     DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  subscriber  Tenant            @relation(fields: [subscriberTenantId], references: [id])
+  connection  PartnerConnection @relation(fields: [connectionId], references: [id])
+
+  @@index([subscriberTenantId])
+  @@map("data_feed_subscriptions")
+}
+
+// ── Webhooks ──────────────────────────────────────────────────────
+
+model Webhook {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  url       String
+  secret    String   // HMAC signing secret — never returned after creation
+  events    String[]
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id])
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId, isActive])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id         String   @id @default(uuid())
+  webhookId  String
+  statusCode Int?
+  success    Boolean  @default(false)
+  attempt    Int      @default(1)
+  payload    String   @db.Text
+  error      String?
+  createdAt  DateTime @default(now())
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+// ── Shipments & Tracking ──────────────────────────────────────────
+
+model Shipment {
+  id                String      @id @default(uuid())
+  tenantId          String
+  carrier           CarrierCode
+  trackingNumber    String
+  status            String      @default("PENDING")
+  asnDocumentId     String?
+  origin            Json        @default("{}")
+  destination       Json        @default("{}")
+  estimatedDelivery DateTime?
+  actualDelivery    DateTime?
+  lastSyncedAt      DateTime?
+  metadata          Json        @default("{}")
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id])
+  events ShipmentEvent[]
+
+  @@index([tenantId, status])
+  @@index([trackingNumber])
+  @@map("shipments")
+}
+
+model ShipmentEvent {
+  id          String   @id @default(uuid())
+  shipmentId  String
+  status      String
+  description String
+  location    String?
+  city        String?
+  country     String?
+  timestamp   DateTime
+  createdAt   DateTime @default(now())
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId, timestamp])
+  @@map("shipment_events")
+}
+
+// ── Inventory ─────────────────────────────────────────────────────
+
+model InventoryRecord {
+  id         String   @id @default(uuid())
+  tenantId   String
+  sku        String
+  quantity   Int      @default(0)
+  reserved   Int      @default(0)
+  location   String?
+  unit       String   @default("EA")
+  costPrice  Float?
+  metadata   Json     @default("{}")
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, sku])
+  @@index([tenantId])
+  @@map("inventory_records")
+}
+
+// ── Audit Log ─────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  userId     String?
+  action     String   // document.create, user.login, etc.
+  resourceId String?
+  resourceType String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

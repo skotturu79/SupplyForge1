@@ -1,0 +1,144 @@
+version: '3.9'
+
+# ══════════════════════════════════════════════════════════════════
+# SupplyForge — Local Development Stack
+# ══════════════════════════════════════════════════════════════════
+#
+# Usage:
+#   docker compose up -d           # start all infrastructure
+#   docker compose up -d postgres redis  # start only data services
+#   docker compose logs -f api     # follow API logs
+#   docker compose down -v         # stop and remove volumes
+#
+# Services:
+#   postgres:13    → localhost:5432
+#   redis:7        → localhost:6379
+#   rabbitmq:3     → localhost:5672  MGMT: localhost:15672
+#   minio          → localhost:9000  CONSOLE: localhost:9001
+#   elasticsearch  → localhost:9200
+#   mailhog        → localhost:1025  UI: localhost:8025
+# ══════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: sf_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: supplyforge
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: supplyforge_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supplyforge -d supplyforge_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [sf-network]
+
+  # ── Redis ─────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: sf_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [sf-network]
+
+  # ── RabbitMQ ──────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: sf_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: supplyforge
+      RABBITMQ_DEFAULT_PASS: password
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks: [sf-network]
+
+  # ── MinIO (S3-compatible object storage) ──────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: sf_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: supplyforge
+      MINIO_ROOT_PASSWORD: password123
+    ports:
+      - "9000:9000"
+      - "9001:9001"   # MinIO Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks: [sf-network]
+
+  # ── Elasticsearch ─────────────────────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: sf_elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    networks: [sf-network]
+
+  # ── MailHog (dev email catcher) ───────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: sf_mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    networks: [sf-network]
+
+networks:
+  sf-network:
+    name: supplyforge
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
+  elasticsearch_data:
