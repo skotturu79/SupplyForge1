@@ -140,14 +140,14 @@ export default function VendorLabelsPage() {
   const [historyFilter, setHistoryFilter] = useState('');
 
   // ── Build live preview from form state ───────────────────────────
-  const livePreview: LabelData = (() => {
+  const livePreview = (() => {
     const base = { type: labelType as LabelType, fromAddress: fromAddr, toAddress: toAddr, referenceNumber: refNum || null, batchNumber: batch || undefined, lotNumber: lot || undefined };
     if (labelType === 'SHIPPING') return { ...base, carrier, service, labelFormat, trackingNumber: 'PREVIEW-ONLY', isReturn, signatureRequired: sigReq, weight: parseFloat(weight) || undefined, weightUnit, dimensions: dimL && dimW && dimH ? { l: +dimL, w: +dimW, h: +dimH, unit: dimUnit } : null, orderId: orderId || null };
     if (labelType === 'PALLET')  return { ...base, sscc: '000000000000000000', content: content || undefined, grossWeight: parseFloat(grossWeight) || undefined, grossWeightUnit: grossUnit, units: parseInt(units) || undefined, unitsType, productionDate: prodDate || undefined, expiryDate: expiryDate || undefined };
     if (labelType === 'HU')     return { ...base, huNumber: huNumber || 'HU-PREVIEW', materialNumber: matNumber || undefined, materialDescription: matDesc || undefined, quantity: parseFloat(quantity) || undefined, quantityUnit: qtyUnit, deliveryNumber: delivery || undefined, plant: plant || undefined, storageLocation: storageLoc || undefined };
     // BOX
     return { ...base, contents: contents || undefined, cartonNumber: parseInt(cartonNum) || 1, totalCartons: parseInt(totalCartons) || 1, qtyPerCarton: parseFloat(qtyPerCarton) || undefined, qtyUnit: boxQtyUnit, weight: parseFloat(boxWeight) || undefined, weightUnit: 'KG' };
-  })();
+  })() as LabelData;
 
   // ── Carrier change ───────────────────────────────────────────────
   const handleCarrierChange = (c: Carrier) => { setCarrier(c); setService(CARRIER_SERVICES[c][0]); };
